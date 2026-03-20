@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
         status: 'waiting',
         categories: ['Everyday Objects'],
         imposter_count: 1,
-        imposter_hint: false,
+        hint_type: 'none',
       })
       .select()
       .single();
@@ -44,7 +44,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to create room' }, { status: 500 });
     }
 
-    // Add the host as the first player
+    // Remove player from any previous room, then add to this one
+    await supabase.from('players').delete().eq('id', playerId);
+
     const { error: playerError } = await supabase
       .from('players')
       .insert({

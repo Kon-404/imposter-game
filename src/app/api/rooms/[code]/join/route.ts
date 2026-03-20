@@ -30,7 +30,7 @@ export async function POST(
       return NextResponse.json({ error: 'Game has already started' }, { status: 400 });
     }
 
-    // Check if player is already in the room
+    // Check if player is already in this room
     const { data: existing } = await supabase
       .from('players')
       .select('id')
@@ -52,7 +52,9 @@ export async function POST(
       return NextResponse.json({ error: 'Room is full (max 20 players)' }, { status: 400 });
     }
 
-    // Add the player
+    // Remove player from any previous room, then add to this one
+    await supabase.from('players').delete().eq('id', playerId);
+
     const { error: playerError } = await supabase
       .from('players')
       .insert({

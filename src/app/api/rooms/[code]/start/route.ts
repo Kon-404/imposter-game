@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase';
 import { selectImposters } from '@/lib/game-logic';
-import { pickRandomWord, generateHint } from '@/lib/words';
+import { pickRandomWord } from '@/lib/words';
 
 export async function POST(
   request: NextRequest,
@@ -43,7 +43,7 @@ export async function POST(
     }
 
     // Pick word and assign imposters
-    const { word, category } = pickRandomWord(room.categories);
+    const { word, hint, category } = pickRandomWord(room.categories);
     const imposterIds = selectImposters(
       players.map((p) => p.id),
       room.imposter_count,
@@ -60,14 +60,20 @@ export async function POST(
         .eq('id', player.id);
     }
 
-    // Update room with word and status
-    const hint = room.imposter_hint ? generateHint(word, category) : null;
+    // Build hint text based on hint_type
+    let hintText: string | null = null;
+    if (room.hint_type === 'category') {
+      hintText = category;
+    } else if (room.hint_type === 'word') {
+      hintText = hint;
+    }
+
     await supabase
       .from('rooms')
       .update({
         status: 'playing',
         word,
-        hint_text: hint,
+        hint_text: hintText,
       })
       .eq('id', room.id);
 

@@ -76,7 +76,7 @@ export async function PATCH(
     if (updates.categories) allowedUpdates.categories = updates.categories;
     if (updates.imposter_count !== undefined) allowedUpdates.imposter_count = updates.imposter_count;
     if (updates.time_limit !== undefined) allowedUpdates.time_limit = updates.time_limit;
-    if (updates.imposter_hint !== undefined) allowedUpdates.imposter_hint = updates.imposter_hint;
+    if (updates.hint_type !== undefined) allowedUpdates.hint_type = updates.hint_type;
 
     const { error } = await supabase
       .from('rooms')

@@ -6,7 +6,7 @@ export interface Room {
   categories: string[];
   imposter_count: number;
   time_limit: number | null;
-  imposter_hint: boolean;
+  hint_type: 'none' | 'category' | 'word';
   word: string | null;
   hint_text: string | null;
   created_at: string;
@@ -25,7 +25,7 @@ export interface GameRole {
   role: 'player' | 'imposter';
   word?: string;
   hint?: string;
-  category?: string;
+  hintType?: 'none' | 'category' | 'word';
 }
 
 export type GameStatus = Room['status'];

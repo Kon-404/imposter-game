@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { getSupabase } from '@/lib/supabase';
 import { CATEGORIES } from '@/lib/types';
@@ -18,10 +18,12 @@ export default function LobbyPage() {
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const settingsChangedAt = useRef(0);
 
   const isHost = room?.host_id === playerId;
 
-  const fetchRoom = useCallback(async () => {
+  // Full fetch — used only on initial load
+  const fetchRoomFull = useCallback(async () => {
     const res = await fetch(`/api/rooms/${code}`);
     if (!res.ok) {
       setError('Room not found');
@@ -32,8 +34,17 @@ export default function LobbyPage() {
     setRoom(data.room);
     setPlayers(data.players);
     setLoading(false);
+    if (data.room.status !== 'waiting') {
+      router.push(`/game/${code}`);
+    }
+  }, [code, router]);
 
-    // If game started, redirect to game page
+  // Light fetch — only updates players + status, preserves host settings
+  const pollRoom = useCallback(async () => {
+    const res = await fetch(`/api/rooms/${code}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    setPlayers(data.players);
     if (data.room.status !== 'waiting') {
       router.push(`/game/${code}`);
     }
@@ -42,22 +53,30 @@ export default function LobbyPage() {
   useEffect(() => {
     const id = localStorage.getItem('imposter_player_id') || '';
     setPlayerId(id);
-    fetchRoom();
-  }, [fetchRoom]);
+    fetchRoomFull();
+  }, [fetchRoomFull]);
+
+  // Store room ID in a ref so realtime effect doesn't re-run on every room update
+  const roomIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (room?.id) roomIdRef.current = room.id;
+  }, [room?.id]);
 
   // Real-time subscriptions
   useEffect(() => {
-    if (!room) return;
+    if (!room?.id) return;
+    const currentRoomId = room.id;
 
     const sb = getSupabase();
     const roomChannel = sb
-      .channel(`room-${room.id}`)
+      .channel(`lobby-${currentRoomId}`)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'rooms', filter: `id=eq.${room.id}` },
+        { event: '*', schema: 'public', table: 'rooms', filter: `id=eq.${currentRoomId}` },
         (payload) => {
           const updated = payload.new as Room;
-          setRoom(updated);
+          // Only react to status changes — don't overwrite host's local settings
           if (updated.status !== 'waiting') {
             router.push(`/game/${code}`);
           }
@@ -65,10 +84,9 @@ export default function LobbyPage() {
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'players', filter: `room_id=eq.${room.id}` },
+        { event: '*', schema: 'public', table: 'players', filter: `room_id=eq.${currentRoomId}` },
         () => {
-          // Refetch players on any change
-          fetchRoom();
+          pollRoom();
         },
       )
       .subscribe();
@@ -76,9 +94,18 @@ export default function LobbyPage() {
     return () => {
       sb.removeChannel(roomChannel);
     };
-  }, [room?.id, code, router, fetchRoom, room]);
+    // Only re-subscribe when room ID changes, not on every room state update
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [room?.id]);
 
-  async function updateSettings(updates: Partial<Room>) {
+  // Polling fallback - only updates players + status
+  useEffect(() => {
+    const interval = setInterval(pollRoom, 3000);
+    return () => clearInterval(interval);
+  }, [pollRoom]);
+
+  async function updateSettings(updates: Record<string, unknown>) {
+    settingsChangedAt.current = Date.now();
     await fetch(`/api/rooms/${code}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -285,31 +312,40 @@ export default function LobbyPage() {
 
           {/* Imposter Hint */}
           <div className="bg-card border border-card-border rounded-2xl p-4 mb-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-lg">💡</span>
-                <div>
-                  <h2 className="font-semibold text-sm uppercase text-muted">Imposter Hint</h2>
-                  <p className="text-sm text-muted">Give imposters a hint about the word</p>
-                </div>
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-lg">💡</span>
+              <div>
+                <h2 className="font-semibold text-sm uppercase text-muted">Imposter Hint</h2>
+                <p className="text-sm text-muted">Help imposters blend in</p>
               </div>
-              <button
-                onClick={() => {
-                  const newVal = !room?.imposter_hint;
-                  setRoom(room ? { ...room, imposter_hint: newVal } : null);
-                  updateSettings({ imposter_hint: newVal });
-                }}
-                className={`w-12 h-7 rounded-full transition-all ${
-                  room?.imposter_hint ? 'bg-primary' : 'bg-gray-300'
-                } relative`}
-              >
-                <div
-                  className={`w-5 h-5 rounded-full bg-white shadow transition-all absolute top-1 ${
-                    room?.imposter_hint ? 'left-6' : 'left-1'
-                  }`}
-                />
-              </button>
             </div>
+            <div className="flex gap-2">
+              {[
+                { value: 'none', label: 'No Hint' },
+                { value: 'category', label: 'Category' },
+                { value: 'word', label: 'Clue Word' },
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => {
+                    setRoom(room ? { ...room, hint_type: opt.value as Room['hint_type'] } : null);
+                    updateSettings({ hint_type: opt.value });
+                  }}
+                  className={`flex-1 py-2 px-3 rounded-xl text-sm font-medium transition-all ${
+                    room?.hint_type === opt.value
+                      ? 'bg-primary text-white'
+                      : 'bg-background border border-card-border'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-muted mt-2">
+              {room?.hint_type === 'none' && 'Imposters get no help — hard mode!'}
+              {room?.hint_type === 'category' && 'Imposters see which category the word is from'}
+              {room?.hint_type === 'word' && 'Imposters get a related clue word to help them bluff'}
+            </p>
           </div>
         </>
       )}
@@ -327,7 +363,7 @@ export default function LobbyPage() {
             <strong>Time Limit:</strong> {room.time_limit ? `${room.time_limit}s` : 'None'}
           </p>
           <p className="text-sm text-muted">
-            <strong>Hint:</strong> {room.imposter_hint ? 'Enabled' : 'Disabled'}
+            <strong>Hint:</strong> {room.hint_type === 'none' ? 'None' : room.hint_type === 'category' ? 'Category' : 'Clue Word'}
           </p>
           <p className="text-center text-sm text-muted mt-4">Waiting for host to start the game...</p>
         </div>

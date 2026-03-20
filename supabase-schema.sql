@@ -10,7 +10,7 @@ create table rooms (
   categories text[] not null default '{"Everyday Objects"}',
   imposter_count int not null default 1,
   time_limit int, -- seconds, null = disabled
-  imposter_hint boolean not null default false,
+  hint_type text not null default 'none' check (hint_type in ('none', 'category', 'word')),
   word text,
   hint_text text,
   created_at timestamptz not null default now()
@@ -49,4 +49,5 @@ create policy "Anyone can update players" on players for update using (true);
 create policy "Anyone can delete players" on players for delete using (true);
 
 -- Add tables to realtime publication
--- Note: In Supabase dashboard, go to Database > Replication and enable realtime for both tables
+alter publication supabase_realtime add table rooms;
+alter publication supabase_realtime add table players;

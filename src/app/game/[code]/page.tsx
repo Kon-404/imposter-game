@@ -37,7 +37,10 @@ export default function GamePage() {
     setRoom(data.room);
     setPlayers(data.players);
     setLoading(false);
-  }, [code]);
+    if (data.room.status === 'waiting') {
+      router.push(`/lobby/${code}`);
+    }
+  }, [code, router]);
 
   const fetchRole = useCallback(async () => {
     const id = localStorage.getItem('imposter_player_id') || '';
@@ -107,14 +110,15 @@ export default function GamePage() {
 
   // Real-time subscriptions
   useEffect(() => {
-    if (!room) return;
+    if (!room?.id) return;
+    const currentRoomId = room.id;
 
     const sb = getSupabase();
     const channel = sb
-      .channel(`game-${room.id}`)
+      .channel(`game-${currentRoomId}`)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'rooms', filter: `id=eq.${room.id}` },
+        { event: '*', schema: 'public', table: 'rooms', filter: `id=eq.${currentRoomId}` },
         (payload) => {
           const updated = payload.new as Room;
           setRoom(updated);
@@ -125,7 +129,7 @@ export default function GamePage() {
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'players', filter: `room_id=eq.${room.id}` },
+        { event: '*', schema: 'public', table: 'players', filter: `room_id=eq.${currentRoomId}` },
         () => {
           fetchRoom();
         },
@@ -135,7 +139,14 @@ export default function GamePage() {
     return () => {
       sb.removeChannel(channel);
     };
-  }, [room?.id, code, router, fetchRoom, room]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [room?.id]);
+
+  // Polling fallback
+  useEffect(() => {
+    const interval = setInterval(fetchRoom, 3000);
+    return () => clearInterval(interval);
+  }, [fetchRoom]);
 
   async function startVoting() {
     await fetch(`/api/rooms/${code}/voting`, {
@@ -224,8 +235,10 @@ export default function GamePage() {
                   <p className="text-muted mt-2">Try to blend in without knowing the word</p>
                   {role.hint && (
                     <div className="mt-4 bg-white rounded-xl p-3 border border-red-100">
-                      <p className="text-sm text-muted">💡 Hint</p>
-                      <p className="font-medium">{role.hint}</p>
+                      <p className="text-sm text-muted">
+                        {role.hintType === 'category' ? '📂 Category' : '💡 Clue Word'}
+                      </p>
+                      <p className="font-medium text-lg">{role.hint}</p>
                     </div>
                   )}
                 </div>

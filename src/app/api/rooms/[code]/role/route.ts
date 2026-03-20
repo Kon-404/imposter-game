@@ -46,6 +46,7 @@ export async function GET(
       return NextResponse.json({
         role: 'imposter',
         hint: room.hint_text,
+        hintType: room.hint_type,
       });
     } else {
       return NextResponse.json({

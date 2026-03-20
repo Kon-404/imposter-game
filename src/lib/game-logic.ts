@@ -1,8 +1,10 @@
 export function generateRoomCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const bytes = new Uint8Array(4);
+  crypto.getRandomValues(bytes);
   let code = '';
   for (let i = 0; i < 4; i++) {
-    code += chars[Math.floor(Math.random() * chars.length)];
+    code += chars[bytes[i] % chars.length];
   }
   return code;
 }
